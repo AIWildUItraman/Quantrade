@@ -1,0 +1,1098 @@
+<!-- 增强功能版本 -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>K线数据标注工具 - 增强版</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            padding: 30px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            text-align: center;
+            font-size: 32px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 25px;
+            font-size: 14px;
+        }
+
+        .control-panel {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .upload-section {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .file-input-wrapper {
+            position: relative;
+        }
+
+        .file-input-wrapper input[type="file"] {
+            display: none;
+        }
+
+        .file-input-label {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            color: white;
+            padding: 14px 28px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: inline-block;
+            font-weight: bold;
+            box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4);
+        }
+
+        .file-input-label:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(76, 175, 80, 0.5);
+        }
+
+        .file-name {
+            color: #333;
+            font-size: 14px;
+            background: white;
+            padding: 8px 15px;
+            border-radius: 5px;
+            font-weight: 500;
+        }
+
+        .input-section {
+            margin-bottom: 20px;
+        }
+
+        .input-section label {
+            display: block;
+            margin-bottom: 10px;
+            color: #333;
+            font-weight: bold;
+            font-size: 15px;
+        }
+
+        textarea {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            resize: vertical;
+            min-height: 120px;
+            transition: border-color 0.3s;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .button-group {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 14px 28px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: bold;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        button:not(:disabled):hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #2196F3 0%, #0b7dda 100%);
+            color: white;
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            color: white;
+        }
+
+        .btn-warning {
+            background: linear-gradient(135deg, #ff9800 0%, #e68900 100%);
+            color: white;
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #f44336 0%, #da190b 100%);
+            color: white;
+        }
+
+        .btn-info {
+            background: linear-gradient(135deg, #00bcd4 0%, #0097a7 100%);
+            color: white;
+        }
+
+        #chartContainer {
+            width: 100%;
+            height: 750px;
+            margin-top: 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        .label-panel {
+            background: linear-gradient(135deg, #fff9e6 0%, #ffe8a3 100%);
+            padding: 25px;
+            border-radius: 10px;
+            margin-top: 20px;
+            border: 2px solid #ffc107;
+            box-shadow: 0 4px 15px rgba(255, 193, 7, 0.2);
+        }
+
+        .label-panel h3 {
+            color: #856404;
+            margin-bottom: 18px;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .label-buttons {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .label-btn {
+            padding: 18px 35px;
+            font-size: 17px;
+            font-weight: bold;
+            border: 3px solid transparent;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+
+        .label-btn-0 {
+            background: linear-gradient(135deg, #9e9e9e 0%, #757575 100%);
+            color: white;
+        }
+
+        .label-btn-0:hover {
+            background: linear-gradient(135deg, #757575 0%, #616161 100%);
+        }
+
+        .label-btn-1 {
+            background: linear-gradient(135deg, #f44336 0%, #da190b 100%);
+            color: white;
+        }
+
+        .label-btn-1:hover {
+            background: linear-gradient(135deg, #da190b 0%, #c41c0b 100%);
+        }
+
+        .label-btn-2 {
+            background: linear-gradient(135deg, #2196F3 0%, #0b7dda 100%);
+            color: white;
+        }
+
+        .label-btn-2:hover {
+            background: linear-gradient(135deg, #0b7dda 0%, #0a6bc2 100%);
+        }
+
+        .label-btn.active {
+            border-color: #333;
+            box-shadow: 0 0 20px rgba(0,0,0,0.4);
+            transform: scale(1.05);
+        }
+
+        .info-text {
+            color: #856404;
+            font-size: 14px;
+            line-height: 1.8;
+            background: rgba(255,255,255,0.7);
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .info-text p {
+            margin-bottom: 8px;
+        }
+
+        .stats {
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            box-shadow: 0 4px 15px rgba(33, 150, 243, 0.2);
+        }
+
+        .stat-item {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .stat-item-label {
+            color: #1565c0;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .stat-item strong {
+            font-size: 28px;
+            color: #0d47a1;
+            display: block;
+            font-weight: 800;
+        }
+
+        .message {
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin-top: 15px;
+            display: none;
+            font-weight: 500;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 2px solid #c3e6cb;
+        }
+
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 2px solid #f5c6cb;
+        }
+
+        .message.show {
+            display: block;
+        }
+
+        /* 键盘快捷键提示 */
+        .keyboard-hint {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            font-size: 13px;
+            color: #555;
+        }
+
+        .keyboard-hint kbd {
+            background: #333;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-family: monospace;
+            margin: 0 3px;
+        }
+
+        /* 进度条 */
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 15px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4CAF50, #8BC34A);
+            transition: width 0.3s;
+        }
+
+        /* 加载动画 */
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📈 K线数据标注工具</h1>
+        <p class="subtitle">专业的K线数据可视化与标注系统</p>
+        
+        <div class="control-panel">
+            <div class="upload-section">
+                <div class="file-input-wrapper">
+                    <input type="file" id="fileInput" accept=".csv">
+                    <label for="fileInput" class="file-input-label">📁 上传CSV文件</label>
+                </div>
+                <span class="file-name" id="fileName">未选择文件</span>
+            </div>
+
+            <div class="input-section">
+                <label for="csvInput">💡 或直接粘贴CSV数据：</label>
+                <textarea id="csvInput" placeholder="粘贴CSV数据，包含表头...&#10;&#10;示例格式：&#10;开盘时间,开盘价,最高价,最低价,收盘价,成交量,收盘时间,成交额,成交笔数,主动买入成交量,主动买入成交额,忽略&#10;2024-09-16 10:00:00,0.00003118,0.00044200,0.00003118,0.00033139,91834503832.00,2024-09-16 10:59:59.999,31521093.30498602,100836,46525338315.00,16039177.70905632,0"></textarea>
+            </div>
+
+            <div class="button-group">
+                <button class="btn-primary" id="loadDataBtn">📊 加载数据</button>
+                <button class="btn-success" id="exportBtn" disabled>💾 导出标注数据</button>
+                <button class="btn-warning" id="clearLabelsBtn" disabled>🗑️ 清除所有标注</button>
+                <button class="btn-info" id="undoBtn" disabled>↶ 撤销</button>
+                <button class="btn-danger" id="resetBtn" disabled>🔄 重置视图</button>
+            </div>
+
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>数据加载中...</p>
+            </div>
+
+            <div class="message" id="message"></div>
+        </div>
+
+        <div class="label-panel" id="labelPanel" style="display: none;">
+            <h3>🏷️ 标注模式</h3>
+            <div class="label-buttons">
+                <button class="label-btn label-btn-0" data-label="0">0️⃣ 无标注</button>
+                <button class="label-btn label-btn-1" data-label="1">1️⃣ 峰值 🔺</button>
+                <button class="label-btn label-btn-2" data-label="2">2️⃣ 谷值 🔻</button>
+            </div>
+            <div class="info-text">
+                <p><strong>💡 使用说明：</strong></p>
+                <p>• 选择标注类型（0=无标注，1=峰值，2=谷值）</p>
+                <p>• 直接点击K线蜡烛图进行标注</p>
+                <p>• 已标注的K线会显示对应的标记（峰值：🔺，谷值：🔻）</p>
+                <p>• 可以重复点击同一K线修改标注</p>
+                <p>• 完成后点击"导出标注数据"保存为CSV文件</p>
+            </div>
+            <div class="keyboard-hint">
+                <strong>⌨️ 快捷键：</strong>
+                <kbd>0</kbd> 选择无标注 
+                <kbd>1</kbd> 选择峰值 
+                <kbd>2</kbd> 选择谷值 
+                <kbd>Ctrl+Z</kbd> 撤销 
+                <kbd>Ctrl+S</kbd> 导出
+            </div>
+
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <div id="chartContainer"></div>
+
+        <div class="stats" id="stats" style="display: none;">
+            <div class="stat-item">
+                <div class="stat-item-label">📊 总数据量</div>
+                <strong id="totalCount">0</strong>
+            </div>
+            <div class="stat-item">
+                <div class="stat-item-label">🔺 峰值标注</div>
+                <strong id="peakCount" style="color: #f44336;">0</strong>
+            </div>
+            <div class="stat-item">
+                <div class="stat-item-label">🔻 谷值标注</div>
+                <strong id="valleyCount" style="color: #2196F3;">0</strong>
+            </div>
+            <div class="stat-item">
+                <div class="stat-item-label">⚪ 未标注</div>
+                <strong id="unlabeledCount" style="color: #9e9e9e;">0</strong>
+            </div>
+            <div class="stat-item">
+                <div class="stat-item-label">📈 标注进度</div>
+                <strong id="progressPercent" style="color: #4CAF50;">0%</strong>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let chart = null;
+        let klineData = [];
+        let currentLabel = '0';
+        let labels = {};
+        let history = []; // 操作历史，用于撤销
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            initChart();
+            initEventListeners();
+            initKeyboardShortcuts();
+        });
+
+        // 初始化图表
+        function initChart() {
+            chart = echarts.init(document.getElementById('chartContainer'));
+            
+            const option = {
+                animation: false,
+                backgroundColor: '#ffffff',
+                legend: {
+                    bottom: 15,
+                    left: 'center',
+                    data: ['K线', '成交量'],
+                    textStyle: {
+                        fontSize: 14,
+                        fontWeight: 'bold'
+                    }
+                },
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: {
+                        type: 'cross'
+                    },
+                    borderWidth: 1,
+                    borderColor: '#ccc',
+                    padding: 15,
+                    textStyle: {
+                        color: '#000',
+                        fontSize: 13
+                    },
+                    position: function (pos, params, el, elRect, size) {
+                        const obj = {top: 10};
+                        obj[['left', 'right'][+(pos[0] < size.viewSize[0] / 2)]] = 30;
+                        return obj;
+                    },
+                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                    extraCssText: 'box-shadow: 0 4px 15px rgba(0,0,0,0.2); border-radius: 8px;'
+                },
+                axisPointer: {
+                    link: [{xAxisIndex: 'all'}],
+                    label: {
+                        backgroundColor: '#667eea'
+                    }
+                },
+                toolbox: {
+                    feature: {
+                        dataZoom: {
+                            yAxisIndex: false
+                        },
+                        brush: {
+                            type: ['lineX', 'clear']
+                        },
+                        saveAsImage: {
+                            title: '保存为图片',
+                            pixelRatio: 2
+                        }
+                    },
+                    right: 20,
+                    top: 10
+                },
+                grid: [
+                    {
+                        left: '8%',
+                        right: '6%',
+                        top: '8%',
+                        height: '52%'
+                    },
+                    {
+                        left: '8%',
+                        right: '6%',
+                        top: '68%',
+                        height: '18%'
+                    }
+                ],
+                xAxis: [
+                    {
+                        type: 'category',
+                        data: [],
+                        boundaryGap: true,
+                        axisLine: {
+                            onZero: false,
+                            lineStyle: {
+                                color: '#667eea'
+                            }
+                        },
+                        splitLine: {show: false},
+                        min: 'dataMin',
+                        max: 'dataMax',
+                        axisPointer: {
+                            z: 100
+                        }
+                    },
+                    {
+                        type: 'category',
+                        gridIndex: 1,
+                        data: [],
+                        boundaryGap: true,
+                        axisLine: {
+                            onZero: false,
+                            lineStyle: {
+                                color: '#667eea'
+                            }
+                        },
+                        axisTick: {show: false},
+                        splitLine: {show: false},
+                        axisLabel: {show: false},
+                        min: 'dataMin',
+                        max: 'dataMax'
+                    }
+                ],
+                yAxis: [
+                    {
+                        scale: true,
+                        splitArea: {
+                            show: true
+                        },
+                        axisLine: {
+                            lineStyle: {
+                                color: '#667eea'
+                            }
+                        }
+                    },
+                    {
+                        scale: true,
+                        gridIndex: 1,
+                        splitNumber: 2,
+                        axisLabel: {show: false},
+                        axisLine: {show: false},
+                        axisTick: {show: false},
+                        splitLine: {show: false}
+                    }
+                ],
+                dataZoom: [
+                    {
+                        type: 'inside',
+                        xAxisIndex: [0, 1],
+                        start: 0,
+                        end: 100
+                    },
+                    {
+                        show: true,
+                        xAxisIndex: [0, 1],
+                        type: 'slider',
+                        bottom: '5%',
+                        start: 0,
+                        end: 100,
+                        handleStyle: {
+                            color: '#667eea'
+                        },
+                        dataBackground: {
+                            areaStyle: {
+                                color: '#e3f2fd'
+                            },
+                            lineStyle: {
+                                color: '#2196F3'
+                            }
+                        }
+                    }
+                ],
+                series: [
+                    {
+                        name: 'K线',
+                        type: 'candlestick',
+                        data: [],
+                        itemStyle: {
+                            color: '#ef5350',
+                            color0: '#26a69a',
+                            borderColor: '#ef5350',
+                            borderColor0: '#26a69a'
+                        },
+                        markPoint: {
+                            symbol: 'pin',
+                            symbolSize: 50,
+                            label: {
+                                fontSize: 16,
+                                formatter: function (param) {
+                                    return param.value;
+                                }
+                            },
+                            data: [],
+                            tooltip: {
+                                formatter: function (param) {
+                                    return param.name + '<br>' + (param.data.coord || '');
+                                }
+                            }
+                        }
+                    },
+                    {
+                        name: '成交量',
+                        type: 'bar',
+                        xAxisIndex: 1,
+                        yAxisIndex: 1,
+                        data: [],
+                        itemStyle: {
+                            color: function(params) {
+                                const index = params.dataIndex;
+                                if (index === 0) return '#26a69a';
+                                const current = klineData[index];
+                                const prev = klineData[index - 1];
+                                return current.close >= prev.close ? '#ef5350' : '#26a69a';
+                            }
+                        }
+                    }
+                ]
+            };
+            
+            chart.setOption(option);
+
+            // 监听图表点击事件
+            chart.on('click', function(params) {
+                if (params.componentType === 'series' && params.seriesName === 'K线') {
+                    const dataIndex = params.dataIndex;
+                    labelKline(dataIndex);
+                }
+            });
+        }
+
+        // 初始化事件监听
+        function initEventListeners() {
+            // 文件上传
+            document.getElementById('fileInput').addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    document.getElementById('fileName').textContent = file.name;
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        document.getElementById('csvInput').value = e.target.result;
+                    };
+                    reader.readAsText(file);
+                }
+            });
+
+            // 加载数据
+            document.getElementById('loadDataBtn').addEventListener('click', loadData);
+
+            // 导出数据
+            document.getElementById('exportBtn').addEventListener('click', exportData);
+
+            // 清除标注
+            document.getElementById('clearLabelsBtn').addEventListener('click', clearLabels);
+
+            // 撤销
+            document.getElementById('undoBtn').addEventListener('click', undo);
+
+            // 重置视图
+            document.getElementById('resetBtn').addEventListener('click', function() {
+                if (chart) {
+                    chart.dispatchAction({
+                        type: 'dataZoom',
+                        start: 0,
+                        end: 100
+                    });
+                    showMessage('视图已重置', 'success');
+                }
+            });
+
+            // 标注按钮
+            document.querySelectorAll('.label-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    selectLabel(this.dataset.label);
+                });
+            });
+
+            // 默认选中0
+            selectLabel('0');
+        }
+
+        // 初始化键盘快捷键
+        function initKeyboardShortcuts() {
+            document.addEventListener('keydown', function(e) {
+                // 0, 1, 2 键切换标注模式
+                if (e.key === '0' || e.key === '1' || e.key === '2') {
+                    e.preventDefault();
+                    selectLabel(e.key);
+                }
+
+                // Ctrl+Z 撤销
+                if (e.ctrlKey && e.key === 'z') {
+                    e.preventDefault();
+                    undo();
+                }
+
+                // Ctrl+S 导出
+                if (e.ctrlKey && e.key === 's') {
+                    e.preventDefault();
+                    if (!document.getElementById('exportBtn').disabled) {
+                        exportData();
+                    }
+                }
+            });
+        }
+
+        // 选择标注类型
+        function selectLabel(label) {
+            currentLabel = label;
+            document.querySelectorAll('.label-btn').forEach(b => b.classList.remove('active'));
+            document.querySelector(`.label-btn[data-label="${label}"]`).classList.add('active');
+        }
+
+        // 加载数据
+        function loadData() {
+            const csvText = document.getElementById('csvInput').value.trim();
+            if (!csvText) {
+                showMessage('❌ 请上传文件或粘贴CSV数据！', 'error');
+                return;
+            }
+
+            document.getElementById('loading').classList.add('show');
+
+            // 使用setTimeout让loading动画显示出来
+            setTimeout(() => {
+                try {
+                    const parsed = Papa.parse(csvText, {
+                        header: true,
+                        skipEmptyLines: true,
+                        dynamicTyping: true
+                    });
+
+                    if (parsed.errors.length > 0) {
+                        showMessage('❌ CSV解析错误：' + parsed.errors[0].message, 'error');
+                        document.getElementById('loading').classList.remove('show');
+                        return;
+                    }
+
+                    const data = parsed.data;
+                    if (data.length === 0) {
+                        showMessage('❌ 没有找到有效数据！', 'error');
+                        document.getElementById('loading').classList.remove('show');
+                        return;
+                    }
+
+                    // 解析K线数据
+                    klineData = data.map(row => {
+                        const time = row['开盘时间'] || row['时间'] || row['timestamp'] || row['time'] || row['date'];
+                        const open = parseFloat(row['开盘价'] || row['open']);
+                        const high = parseFloat(row['最高价'] || row['high']);
+                        const low = parseFloat(row['最低价'] || row['low']);
+                        const close = parseFloat(row['收盘价'] || row['close']);
+                        const volume = parseFloat(row['成交量'] || row['volume']);
+
+                        return {
+                            time: time,
+                            open: open,
+                            high: high,
+                            low: low,
+                            close: close,
+                            volume: volume,
+                            rawData: row
+                        };
+                    });
+
+                    // 初始化标注
+                    labels = {};
+                    history = [];
+                    klineData.forEach((item, index) => {
+                        // 如果原数据中有label列，则读取
+                        const existingLabel = item.rawData['label'] || item.rawData['Label'];
+                        labels[index] = existingLabel ? String(existingLabel) : '0';
+                    });
+
+                    renderChart();
+                    
+                    document.getElementById('labelPanel').style.display = 'block';
+                    document.getElementById('stats').style.display = 'grid';
+                    document.getElementById('exportBtn').disabled = false;
+                    document.getElementById('clearLabelsBtn').disabled = false;
+                    document.getElementById('resetBtn').disabled = false;
+
+                    updateStats();
+                    document.getElementById('loading').classList.remove('show');
+                    showMessage(`✅ 成功加载 ${klineData.length} 条数据！`, 'success');
+
+                } catch (error) {
+                    document.getElementById('loading').classList.remove('show');
+                    showMessage('❌ 数据加载失败：' + error.message, 'error');
+                    console.error(error);
+                }
+            }, 100);
+        }
+
+        // 渲染图表
+        function renderChart() {
+            const dates = klineData.map(item => item.time);
+            const values = klineData.map(item => [item.open, item.close, item.low, item.high]);
+            const volumes = klineData.map(item => item.volume);
+
+            // 生成标注点
+            const markPointData = [];
+            Object.keys(labels).forEach(index => {
+                const label = labels[index];
+                if (label === '1') {
+                    markPointData.push({
+                        name: '峰',
+                        value: '🔺',
+                        xAxis: parseInt(index),
+                        yAxis: klineData[index].high,
+                        itemStyle: {
+                            color: '#f44336'
+                        }
+                    });
+                } else if (label === '2') {
+                    markPointData.push({
+                        name: '谷',
+                        value: '🔻',
+                        xAxis: parseInt(index),
+                        yAxis: klineData[index].low,
+                        itemStyle: {
+                            color: '#2196F3'
+                        }
+                    });
+                }
+            });
+
+            chart.setOption({
+                xAxis: [
+                    {data: dates},
+                    {data: dates}
+                ],
+                series: [
+                    {
+                        data: values,
+                        markPoint: {
+                            data: markPointData
+                        }
+                    },
+                    {
+                        data: volumes
+                    }
+                ],
+                tooltip: {
+                    formatter: function(params) {
+                        if (params.length === 0) return '';
+                        
+                        let result = '';
+                        params.forEach(param => {
+                            if (param.seriesName === 'K线') {
+                                const index = param.dataIndex;
+                                const data = klineData[index];
+                                const label = labels[index];
+                                const labelText = label === '1' ? '峰值 🔺' : label === '2' ? '谷值 🔻' : '无标注';
+                                const labelColor = label === '1' ? '#f44336' : label === '2' ? '#2196F3' : '#9e9e9e';
+                                const change = ((data.close - data.open) / data.open * 100).toFixed(2);
+                                const changeColor = change >= 0 ? '#ef5350' : '#26a69a';
+                                
+                                result += `<div style="font-weight: bold; margin-bottom: 10px; font-size: 14px; border-bottom: 2px solid #eee; padding-bottom: 5px;">${data.time}</div>`;
+                                result += `<div style="display: grid; grid-template-columns: 80px 1fr; gap: 8px; font-size: 13px;">`;
+                                result += `<div style="color: #999;">开盘:</div><div style="font-weight: 600;">${data.open}</div>`;
+                                result += `<div style="color: #999;">收盘:</div><div style="font-weight: 600;">${data.close}</div>`;
+                                result += `<div style="color: #999;">最高:</div><div style="font-weight: 600; color: #f44336;">${data.high}</div>`;
+                                result += `<div style="color: #999;">最低:</div><div style="font-weight: 600; color: #26a69a;">${data.low}</div>`;
+                                result += `<div style="color: #999;">涨跌幅:</div><div style="font-weight: 600; color: ${changeColor};">${change}%</div>`;
+                                result += `<div style="color: #999;">成交量:</div><div style="font-weight: 600;">${data.volume.toLocaleString()}</div>`;
+                                result += `</div>`;
+                                result += `<div style="margin-top: 10px; padding: 6px 12px; background: ${labelColor}; color: white; border-radius: 5px; display: inline-block; font-weight: bold; font-size: 13px;">标注: ${labelText}</div>`;
+                            }
+                        });
+                        
+                        return result;
+                    }
+                }
+            });
+        }
+
+        // 标注K线
+        function labelKline(index) {
+            // 保存历史记录
+            history.push({
+                index: index,
+                oldLabel: labels[index]
+            });
+            
+            if (history.length > 100) {
+                history.shift(); // 保持历史记录不超过100条
+            }
+
+            labels[index] = currentLabel;
+            renderChart();
+            updateStats();
+            
+            const labelText = currentLabel === '1' ? '峰值 🔺' : currentLabel === '2' ? '谷值 🔻' : '无标注';
+            showMessage(`✅ 已标注第 ${index + 1} 根K线为：${labelText}`, 'success');
+            
+            document.getElementById('undoBtn').disabled = false;
+        }
+
+        // 撤销操作
+        function undo() {
+            if (history.length === 0) {
+                showMessage('⚠️ 没有可撤销的操作', 'error');
+                return;
+            }
+
+            const lastAction = history.pop();
+            labels[lastAction.index] = lastAction.oldLabel;
+            renderChart();
+            updateStats();
+            showMessage('↶ 已撤销上一次操作', 'success');
+
+            if (history.length === 0) {
+                document.getElementById('undoBtn').disabled = true;
+            }
+        }
+
+        // 更新统计
+        function updateStats() {
+            const total = Object.keys(labels).length;
+            let peaks = 0, valleys = 0, unlabeled = 0;
+
+            Object.values(labels).forEach(label => {
+                if (label === '1') peaks++;
+                else if (label === '2') valleys++;
+                else unlabeled++;
+            });
+
+            const labeled = peaks + valleys;
+            const progress = total > 0 ? ((labeled / total) * 100).toFixed(1) : 0;
+
+            document.getElementById('totalCount').textContent = total.toLocaleString();
+            document.getElementById('peakCount').textContent = peaks.toLocaleString();
+            document.getElementById('valleyCount').textContent = valleys.toLocaleString();
+            document.getElementById('unlabeledCount').textContent = unlabeled.toLocaleString();
+            document.getElementById('progressPercent').textContent = progress + '%';
+            document.getElementById('progressFill').style.width = progress + '%';
+        }
+
+        // 导出数据
+        function exportData() {
+            try {
+                const exportData = klineData.map((item, index) => {
+                    return {
+                        ...item.rawData,
+                        label: labels[index] || '0'
+                    };
+                });
+
+                const csv = Papa.unparse(exportData, {
+                    quotes: false,
+                    quoteChar: '"',
+                    delimiter: ","
+                });
+
+                const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+                link.setAttribute('href', url);
+                link.setAttribute('download', `kline_labeled_${timestamp}.csv`);
+                link.style.visibility = 'hidden';
+                
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                showMessage('✅ 数据导出成功！文件已下载', 'success');
+            } catch (error) {
+                showMessage('❌ 导出失败：' + error.message, 'error');
+                console.error(error);
+            }
+        }
+
+        // 清除标注
+        function clearLabels() {
+            if (confirm('⚠️ 确定要清除所有标注吗？此操作不可恢复！')) {
+                Object.keys(labels).forEach(key => {
+                    labels[key] = '0';
+                });
+                history = [];
+                renderChart();
+                updateStats();
+                document.getElementById('undoBtn').disabled = true;
+                showMessage('🗑️ 已清除所有标注！', 'success');
+            }
+        }
+
+        // 显示消息
+        function showMessage(text, type) {
+            const messageEl = document.getElementById('message');
+            messageEl.textContent = text;
+            messageEl.className = 'message ' + type + ' show';
+            
+            setTimeout(() => {
+                messageEl.classList.remove('show');
+            }, 3000);
+        }
+
+        // 窗口大小改变时重绘图表
+        window.addEventListener('resize', function() {
+            if (chart) {
+                chart.resize();
+            }
+        });
+    </script>
+</body>
+</html>
