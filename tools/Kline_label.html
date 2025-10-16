@@ -1,10 +1,10 @@
-<!-- 增强功能版本 -->
+<!-- 增强功能版本 - 适配新数据格式 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>K线数据标注工具 - 增强版</title>
+    <title>K线数据标注工具</title>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
     <style>
@@ -396,14 +396,41 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+
+        .format-info {
+            background: #e8f5e9;
+            border: 2px solid #4CAF50;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .format-info h4 {
+            color: #2e7d32;
+            margin-bottom: 10px;
+        }
+
+        .format-info code {
+            background: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            color: #d32f2f;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>📈 K线数据标注工具</h1>
-        <p class="subtitle">专业的K线数据可视化与标注系统</p>
+        <p class="subtitle">专业的K线数据可视化与标注系统（支持新格式）</p>
         
         <div class="control-panel">
+            <div class="format-info">
+                <h4>📋 支持的数据格式</h4>
+                <p>新格式（推荐）：<code>time,open,high,low,close,volume,amount</code></p>
+                <p>示例：2024-01-01 08:00:00,0.00123,0.00125,0.00122,0.00124,1000000,1240.5</p>
+            </div>
+
             <div class="upload-section">
                 <div class="file-input-wrapper">
                     <input type="file" id="fileInput" accept=".csv">
@@ -414,7 +441,7 @@
 
             <div class="input-section">
                 <label for="csvInput">💡 或直接粘贴CSV数据：</label>
-                <textarea id="csvInput" placeholder="粘贴CSV数据，包含表头...&#10;&#10;示例格式：&#10;开盘时间,开盘价,最高价,最低价,收盘价,成交量,收盘时间,成交额,成交笔数,主动买入成交量,主动买入成交额,忽略&#10;2024-09-16 10:00:00,0.00003118,0.00044200,0.00003118,0.00033139,91834503832.00,2024-09-16 10:59:59.999,31521093.30498602,100836,46525338315.00,16039177.70905632,0"></textarea>
+                <textarea id="csvInput" placeholder="粘贴CSV数据，包含表头...&#10;&#10;新格式示例：&#10;time,open,high,low,close,volume,amount&#10;2024-01-01 08:00:00,0.00123,0.00125,0.00122,0.00124,1000000,1240.5&#10;2024-01-01 09:00:00,0.00124,0.00126,0.00123,0.00125,1100000,1375.2"></textarea>
             </div>
 
             <div class="button-group">
@@ -800,7 +827,7 @@
             document.querySelector(`.label-btn[data-label="${label}"]`).classList.add('active');
         }
 
-        // 加载数据
+        // 加载数据 - 适配新格式
         function loadData() {
             const csvText = document.getElementById('csvInput').value.trim();
             if (!csvText) {
@@ -832,14 +859,21 @@
                         return;
                     }
 
-                    // 解析K线数据
+                    // 解析K线数据 - 支持新格式
                     klineData = data.map(row => {
-                        const time = row['开盘时间'] || row['时间'] || row['timestamp'] || row['time'] || row['date'];
-                        const open = parseFloat(row['开盘价'] || row['open']);
-                        const high = parseFloat(row['最高价'] || row['high']);
-                        const low = parseFloat(row['最低价'] || row['low']);
-                        const close = parseFloat(row['收盘价'] || row['close']);
-                        const volume = parseFloat(row['成交量'] || row['volume']);
+                        // 新格式字段映射
+                        const time = row['time'] || row['Time'] || row['开盘时间'] || row['timestamp'] || row['date'];
+                        const open = parseFloat(row['open'] || row['Open'] || row['开盘价']);
+                        const high = parseFloat(row['high'] || row['High'] || row['最高价']);
+                        const low = parseFloat(row['low'] || row['Low'] || row['最低价']);
+                        const close = parseFloat(row['close'] || row['Close'] || row['收盘价']);
+                        const volume = parseFloat(row['volume'] || row['Volume'] || row['成交量']);
+                        const amount = parseFloat(row['amount'] || row['Amount'] || row['成交额'] || row['quote_volume'] || 0);
+
+                        // 数据验证
+                        if (!time || isNaN(open) || isNaN(high) || isNaN(low) || isNaN(close) || isNaN(volume)) {
+                            return null;
+                        }
 
                         return {
                             time: time,
@@ -848,9 +882,16 @@
                             low: low,
                             close: close,
                             volume: volume,
+                            amount: amount,
                             rawData: row
                         };
-                    });
+                    }).filter(item => item !== null); // 过滤无效数据
+
+                    if (klineData.length === 0) {
+                        showMessage('❌ 没有找到有效的K线数据！请检查数据格式。', 'error');
+                        document.getElementById('loading').classList.remove('show');
+                        return;
+                    }
 
                     // 初始化标注
                     labels = {};
@@ -947,12 +988,15 @@
                                 
                                 result += `<div style="font-weight: bold; margin-bottom: 10px; font-size: 14px; border-bottom: 2px solid #eee; padding-bottom: 5px;">${data.time}</div>`;
                                 result += `<div style="display: grid; grid-template-columns: 80px 1fr; gap: 8px; font-size: 13px;">`;
-                                result += `<div style="color: #999;">开盘:</div><div style="font-weight: 600;">${data.open}</div>`;
-                                result += `<div style="color: #999;">收盘:</div><div style="font-weight: 600;">${data.close}</div>`;
-                                result += `<div style="color: #999;">最高:</div><div style="font-weight: 600; color: #f44336;">${data.high}</div>`;
-                                result += `<div style="color: #999;">最低:</div><div style="font-weight: 600; color: #26a69a;">${data.low}</div>`;
+                                result += `<div style="color: #999;">开盘:</div><div style="font-weight: 600;">${data.open.toFixed(8)}</div>`;
+                                result += `<div style="color: #999;">收盘:</div><div style="font-weight: 600;">${data.close.toFixed(8)}</div>`;
+                                result += `<div style="color: #999;">最高:</div><div style="font-weight: 600; color: #f44336;">${data.high.toFixed(8)}</div>`;
+                                result += `<div style="color: #999;">最低:</div><div style="font-weight: 600; color: #26a69a;">${data.low.toFixed(8)}</div>`;
                                 result += `<div style="color: #999;">涨跌幅:</div><div style="font-weight: 600; color: ${changeColor};">${change}%</div>`;
                                 result += `<div style="color: #999;">成交量:</div><div style="font-weight: 600;">${data.volume.toLocaleString()}</div>`;
+                                if (data.amount > 0) {
+                                    result += `<div style="color: #999;">成交额:</div><div style="font-weight: 600;">${data.amount.toFixed(2)}</div>`;
+                                }
                                 result += `</div>`;
                                 result += `<div style="margin-top: 10px; padding: 6px 12px; background: ${labelColor}; color: white; border-radius: 5px; display: inline-block; font-weight: bold; font-size: 13px;">标注: ${labelText}</div>`;
                             }
@@ -1026,12 +1070,18 @@
             document.getElementById('progressFill').style.width = progress + '%';
         }
 
-        // 导出数据
+        // 导出数据 - 保持新格式
         function exportData() {
             try {
                 const exportData = klineData.map((item, index) => {
                     return {
-                        ...item.rawData,
+                        time: item.time,
+                        open: item.open,
+                        high: item.high,
+                        low: item.low,
+                        close: item.close,
+                        volume: item.volume,
+                        amount: item.amount,
                         label: labels[index] || '0'
                     };
                 });

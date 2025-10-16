@@ -1,7 +1,7 @@
 import requests
 import pandas as pd
 import time
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -86,34 +86,84 @@ def get_all_klines(symbol, interval, start_time, limit=1000):
     session.close()
     return klines
 
+def process_klines_data(klines):
+    """
+    处理K线数据，只保留需要的字段，并转换为中国时间
+    """
+    # Binance 返回的数据格式：
+    # [0]开盘时间, [1]开盘价, [2]最高价, [3]最低价, [4]收盘价, [5]成交量, 
+    # [6]收盘时间, [7]成交额, [8]成交笔数, [9]主动买入成交量, [10]主动买入成交额, [11]忽略
+    
+    processed_data = []
+    
+    for kline in klines:
+        processed_data.append({
+            'time': kline[0],           # 时间戳（毫秒）
+            'open': float(kline[1]),    # 开盘价
+            'high': float(kline[2]),    # 最高价
+            'low': float(kline[3]),     # 最低价
+            'close': float(kline[4]),   # 收盘价
+            'volume': float(kline[5]),  # 成交量
+            'amount': float(kline[7])   # 成交额（Quote volume）
+        })
+    
+    df = pd.DataFrame(processed_data)
+    
+    # 将时间戳转换为中国时间（UTC+8）
+    df['time'] = pd.to_datetime(df['time'], unit='ms', utc=True)
+    # 转换为中国时区
+    china_tz = timezone(timedelta(hours=8))
+    df['time'] = df['time'].dt.tz_convert(china_tz)
+    # 格式化为更易读的格式（可选）
+    df['time'] = df['time'].dt.strftime('%Y-%m-%d %H:%M:%S')
+    
+    return df
+
 def main():
-    symbol = "NEIROUSDT"  # 注意：确保该交易对在 Binance 上存在
-    interval = "1h"
+    symbol = "NEIROUSDT"
+    intervals = ["1h", "2h"]  # 获取1小时和2小时的数据
     
     # 从很早的时间开始获取（0 表示 Unix 纪元时间，API 会自动返回最早可用的数据）
     start_time = 0
     
-    print(f"正在获取 {symbol} {interval} K线数据，请稍候...")
-    klines = get_all_klines(symbol, interval, start_time)
+    for interval in intervals:
+        print(f"\n{'='*60}")
+        print(f"正在获取 {symbol} {interval} K线数据，请稍候...")
+        print(f"{'='*60}\n")
+        
+        klines = get_all_klines(symbol, interval, start_time)
+        
+        if not klines:
+            print(f"没有获取到 {interval} 数据")
+            continue
+        
+        # 处理数据
+        df = process_klines_data(klines)
+        
+        # 显示数据信息
+        print(f"\n数据统计信息:")
+        print(f"总记录数: {len(df)}")
+        print(f"时间范围: {df['time'].iloc[0]} 至 {df['time'].iloc[-1]}")
+        print(f"\n前5条数据预览:")
+        print(df.head())
+        print(f"\n后5条数据预览:")
+        print(df.tail())
+        print(f"\n数据统计:")
+        print(df.describe())
+        
+        # 保存为 CSV 文件
+        output_file = f"{symbol}_{interval}_data.csv"
+        df.to_csv(output_file, index=False, encoding='utf-8-sig')
+        print(f"\n✅ 数据已保存到 {output_file}")
+        
+        
+        print(f"\n{'='*60}\n")
+        
+        # 避免连续请求过快
+        if interval != intervals[-1]:
+            time.sleep(2)
     
-    if not klines:
-        print("没有获取到数据")
-        return
-    
-    # Binance 返回的数据格式为：
-    # [开盘时间, 开盘价, 最高价, 最低价, 收盘价, 成交量, 收盘时间, 成交额, 成交笔数, 主动买入成交量, 主动买入成交额, 忽略]
-    columns = ["开盘时间", "开盘价", "最高价", "最低价", "收盘价", "成交量",
-               "收盘时间", "成交额", "成交笔数", "主动买入成交量", "主动买入成交额", "忽略"]
-    df = pd.DataFrame(klines, columns=columns)
-    
-    # 将时间戳（毫秒）转换为可读时间
-    df["开盘时间"] = pd.to_datetime(df["开盘时间"], unit='ms')
-    df["收盘时间"] = pd.to_datetime(df["收盘时间"], unit='ms')
-    
-    # 保存为 CSV 文件
-    output_file = f"{symbol}_{interval}_data.csv"
-    df.to_csv(output_file, index=False)
-    print(f"数据已保存到 {output_file}，共 {len(df)} 条记录")
+    print("🎉 所有数据下载完成！")
 
 if __name__ == "__main__":
     main()

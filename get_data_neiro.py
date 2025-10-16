@@ -102,13 +102,13 @@ def main():
     
     # Binance 返回的数据格式为：
     # [开盘时间, 开盘价, 最高价, 最低价, 收盘价, 成交量, 收盘时间, 成交额, 成交笔数, 主动买入成交量, 主动买入成交额, 忽略]
-    columns = ["开盘时间", "开盘价", "最高价", "最低价", "收盘价", "成交量",
-               "收盘时间", "成交额", "成交笔数", "主动买入成交量", "主动买入成交额", "忽略"]
+    columns = ["Timestamp", "Open", "High", "Low", "Close", "Volume",
+               "Close_time", "Quote_volume", "Count", "Taker_buy_volume", "Taker_buy_quote_volume", "Ignore"]
     df = pd.DataFrame(klines, columns=columns)
     
     # 将时间戳（毫秒）转换为可读时间
-    df["开盘时间"] = pd.to_datetime(df["开盘时间"], unit='ms')
-    df["收盘时间"] = pd.to_datetime(df["收盘时间"], unit='ms')
+    df["Timestamp"] = pd.to_datetime(df["Timestamp"], unit='ms')
+    df["Close_time"] = pd.to_datetime(df["Close_time"], unit='ms')
     
     # 保存为 CSV 文件
     output_file = f"{symbol}_{interval}_data2.csv"
