@@ -121,8 +121,7 @@ def process_klines_data(klines):
 
 def main():
     symbol = "NEIROUSDT"
-    intervals = ["1h", "2h"]  # 获取1小时和2小时的数据
-    
+    intervals = ["4h"]  
     # 从很早的时间开始获取（0 表示 Unix 纪元时间，API 会自动返回最早可用的数据）
     start_time = 0
     
