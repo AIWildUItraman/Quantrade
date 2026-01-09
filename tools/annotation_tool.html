@@ -7,6 +7,9 @@
     <!-- 引入 ECharts - 使用多个CDN备用 -->
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"
             onerror="this.onerror=null; this.src='https://unpkg.com/echarts@5.4.3/dist/echarts.min.js'"></script>
+    <!-- 引入 JSZip - 用于导出图像ZIP -->
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"
+            onerror="this.onerror=null; this.src='https://unpkg.com/jszip@3.10.1/dist/jszip.min.js'"></script>
     <script>
         // 检查ECharts是否加载成功
         window.addEventListener('DOMContentLoaded', function() {
@@ -416,10 +419,18 @@
                         <button class="btn btn-nav" id="btnNext" onclick="app.nextPage()">
                             下一张 ➡️ (→)
                         </button>
-                        <button class="btn btn-save" onclick="app.saveToCSV()">
-                            💾 保存标注 (S)
-                        </button>
                     </div>
+                </div>
+                <div class="button-group">
+                    <button class="btn btn-save" onclick="app.saveToCSV()">
+                        💾 保存窗口数据 (S)
+                    </button>
+                    <button class="btn btn-save" onclick="app.exportLabeledCSV()">
+                        📄 导出标签CSV
+                    </button>
+                    <button class="btn btn-save" onclick="app.exportImages()">
+                        🖼️ 导出图像ZIP
+                    </button>
                 </div>
             </div>
 
@@ -474,6 +485,7 @@
             currentIndex: 0,          // 当前窗口索引
             fileName: '',             // 原始文件名
             hasUnsavedChanges: false, // 是否有未保存的修改
+            klineLabels: [],          // 临时存储K线标签（用于恢复标注）
 
             // Canvas元素
             canvasPrev: null,
@@ -483,8 +495,29 @@
             // K线展示图表
             klineChart: null,
 
+            // K线图缩放状态
+            zoomState: {
+                start: 0,
+                end: 100
+            },
+
             // 初始化
             init() {
+                // 添加 roundRect polyfill（兼容旧浏览器）
+                if (!CanvasRenderingContext2D.prototype.roundRect) {
+                    CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+                        if (w < 2 * r) r = w / 2;
+                        if (h < 2 * r) r = h / 2;
+                        this.moveTo(x + r, y);
+                        this.arcTo(x + w, y, x + w, y + h, r);
+                        this.arcTo(x + w, y + h, x, y + h, r);
+                        this.arcTo(x, y + h, x, y, r);
+                        this.arcTo(x, y, x + w, y, r);
+                        this.closePath();
+                        return this;
+                    };
+                }
+
                 this.canvasPrev = document.getElementById('canvasPrev');
                 this.canvasCurrent = document.getElementById('canvasCurrent');
                 this.canvasNext = document.getElementById('canvasNext');
@@ -656,6 +689,17 @@
                 };
 
                 this.klineChart.setOption(option);
+
+                // 监听dataZoom事件，保存用户的缩放状态
+                this.klineChart.on('datazoom', (params) => {
+                    const option = this.klineChart.getOption();
+                    if (option.dataZoom && option.dataZoom.length > 0) {
+                        // 保存当前缩放状态
+                        this.zoomState.start = option.dataZoom[0].start;
+                        this.zoomState.end = option.dataZoom[0].end;
+                        console.log('缩放状态已更新:', this.zoomState);
+                    }
+                });
             },
 
             // ========================================
@@ -681,6 +725,12 @@
 
             // 解析CSV
             parseCSV(csvText) {
+                // 移除BOM（字节顺序标记）- 可能导致第一个字段无法识别
+                if (csvText.charCodeAt(0) === 0xFEFF) {
+                    csvText = csvText.slice(1);
+                    console.log('⚠️ 检测到并移除了BOM标记');
+                }
+
                 const lines = csvText.trim().split('\n');
                 if (lines.length < 2) {
                     alert('CSV文件格式错误！');
@@ -690,12 +740,20 @@
                 // 解析表头
                 const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
 
+                // 调试：输出表头信息
+                console.log('========== CSV表头调试 ==========');
+                console.log('原始第一行:', lines[0]);
+                console.log('解析后表头:', headers);
+                console.log('表头数量:', headers.length);
+                console.log('是否包含time:', headers.includes('time'));
+                console.log('是否包含timestamp:', headers.includes('timestamp'));
+
                 // 检查时间字段（支持 time 或 timestamp）
                 const timeField = headers.includes('time') ? 'time' :
                                  headers.includes('timestamp') ? 'timestamp' : null;
 
                 if (!timeField) {
-                    alert('CSV缺少时间字段！需要 "time" 或 "timestamp" 列');
+                    alert(`CSV缺少时间字段！需要 "time" 或 "timestamp" 列\n\n当前表头: ${headers.join(', ')}\n\n请检查CSV文件格式！`);
                     return;
                 }
 
@@ -717,14 +775,20 @@
                     indices[field] = headers.indexOf(field);
                 });
 
+                // 检测label列（用于恢复标注）
+                const labelIndex = headers.indexOf('label');
+                const hasLabelColumn = labelIndex !== -1;
+
                 // 输出字段映射信息
                 console.log('========== CSV解析开始 ==========');
                 console.log('CSV表头:', headers);
                 console.log('字段索引映射:', indices);
                 console.log('时间字段:', timeField);
+                console.log('包含label列:', hasLabelColumn);
 
                 // 解析数据行
                 this.rawData = [];
+                this.klineLabels = [];  // 重置标签数组
                 let invalidCount = 0;
 
                 for (let i = 1; i < lines.length; i++) {
@@ -786,6 +850,14 @@
                         close: close,
                         volume: volume
                     });
+
+                    // 提取label（如果存在）
+                    if (hasLabelColumn && values.length > labelIndex) {
+                        const label = values[labelIndex].trim();
+                        this.klineLabels.push(label || null);
+                    } else {
+                        this.klineLabels.push(null);
+                    }
                 }
 
                 // 显示数据质量信息
@@ -826,9 +898,22 @@
                         normalized: normalized
                     });
 
+                    // 恢复标注：使用窗口最右侧K线（第i+23根）的标签
+                    let restoredLabel = null;
+                    if (this.klineLabels && this.klineLabels.length > 0) {
+                        const rightmostKlineIdx = i + 23;
+                        if (rightmostKlineIdx < this.klineLabels.length) {
+                            const label = this.klineLabels[rightmostKlineIdx];
+                            // 只恢复有效的标签（'up', 'down', 'fluctuation'）
+                            if (label === 'up' || label === 'down' || label === 'fluctuation') {
+                                restoredLabel = label;
+                            }
+                        }
+                    }
+
                     this.annotations.push({
                         index: i,
-                        label: null
+                        label: restoredLabel
                     });
                 }
 
@@ -839,12 +924,31 @@
 
                 // 显示主内容区
                 document.getElementById('mainContent').classList.remove('hidden');
-                document.getElementById('fileInfo').textContent =
-                    `✅ 加载成功: ${this.rawData.length} 根K线，生成 ${this.windows.length} 个窗口`;
 
-                // 初始化显示
-                this.currentIndex = 0;
+                // 统计恢复的标注数量
+                const restoredCount = this.annotations.filter(ann => ann.label).length;
+                if (restoredCount > 0) {
+                    document.getElementById('fileInfo').textContent =
+                        `✅ 加载成功: ${this.rawData.length} 根K线，生成 ${this.windows.length} 个窗口 | 恢复了 ${restoredCount} 个标注`;
+                } else {
+                    document.getElementById('fileInfo').textContent =
+                        `✅ 加载成功: ${this.rawData.length} 根K线，生成 ${this.windows.length} 个窗口`;
+                }
+
+                // 自动跳转到第一个未标注窗口
+                this.currentIndex = this.findFirstUnlabeledIndex();
                 this.updateUI();
+            },
+
+            // 查找第一个未标注窗口的索引
+            findFirstUnlabeledIndex() {
+                for (let i = 0; i < this.annotations.length; i++) {
+                    if (!this.annotations[i].label) {
+                        return i;
+                    }
+                }
+                // 全部已标注，返回最后一个
+                return this.annotations.length - 1;
             },
 
             // 归一化窗口数据
@@ -926,15 +1030,15 @@
                     dataZoom: [
                         {
                             type: 'inside',
-                            start: 0,
-                            end: 100
+                            start: this.zoomState.start,
+                            end: this.zoomState.end
                         },
                         {
                             show: true,
                             type: 'slider',
                             bottom: '5%',
-                            start: 0,
-                            end: 100
+                            start: this.zoomState.start,
+                            end: this.zoomState.end
                         }
                     ],
                     series: [
@@ -1018,6 +1122,9 @@
                                      label === 'down' ? '#eb3349' : '#f5576c';
                     ctx.lineWidth = 4;
                     ctx.strokeRect(0, 0, width, height);
+
+                    // 绘制标签标记
+                    this.drawLabelTag(ctx, label, width);
                 }
 
                 // 绘制网格
@@ -1083,6 +1190,43 @@
                     ctx.fillStyle = '#eb3349';
                     ctx.fillRect(x, bodyTop, width, Math.max(bodyHeight, 1));
                 }
+            },
+
+            // 绘制标签标记
+            drawLabelTag(ctx, label, canvasWidth) {
+                const labelConfig = {
+                    'up': { text: '上涨', bgColor: 'rgba(17, 153, 142, 0.9)', emoji: '📈' },
+                    'down': { text: '下跌', bgColor: 'rgba(235, 51, 73, 0.9)', emoji: '📉' },
+                    'fluctuation': { text: '波动', bgColor: 'rgba(245, 87, 108, 0.9)', emoji: '📊' }
+                };
+
+                const config = labelConfig[label];
+                if (!config) return;
+
+                const text = `${config.emoji} ${config.text}`;
+
+                // 设置字体以计算文本宽度
+                ctx.font = 'bold 14px Arial';
+                const textWidth = ctx.measureText(text).width;
+
+                // 标签尺寸和位置
+                const tagPadding = 8;
+                const tagHeight = 24;
+                const tagWidth = textWidth + tagPadding * 2;
+                const tagX = canvasWidth - tagWidth - 10;
+                const tagY = 10;
+
+                // 绘制背景圆角矩形
+                ctx.fillStyle = config.bgColor;
+                ctx.beginPath();
+                ctx.roundRect(tagX, tagY, tagWidth, tagHeight, 4);
+                ctx.fill();
+
+                // 绘制文本
+                ctx.fillStyle = '#ffffff';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(text, tagX + tagWidth / 2, tagY + tagHeight / 2);
             },
 
             // ========================================
@@ -1187,6 +1331,19 @@
 
                 // 自动跳转到下一张
                 if (this.currentIndex < this.windows.length - 1) {
+                    // 计算平移量：向右移动一个K线（视觉上图表向左移动）
+                    const shiftPercent = 100 / this.rawData.length;
+
+                    // 更新缩放状态，保持范围不变
+                    const newStart = this.zoomState.start + shiftPercent;
+                    const newEnd = this.zoomState.end + shiftPercent;
+
+                    // 确保不超出边界
+                    if (newEnd <= 100) {
+                        this.zoomState.start = newStart;
+                        this.zoomState.end = newEnd;
+                    }
+
                     this.nextPage();
                 } else {
                     // 已经是最后一张，只更新UI
@@ -1267,6 +1424,248 @@
                       `已标注: ${stats.labeled} (${percentage}%)\n` +
                       `上涨: ${stats.up} | 下跌: ${stats.down} | 波动: ${stats.fluctuation}\n\n` +
                       `文件已下载: annotated_${this.fileName}`);
+            },
+
+            // 下载文件辅助函数
+            downloadFile(content, filename, mimeType) {
+                const blob = content instanceof Blob ? content : new Blob([content], { type: mimeType });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(link.href);
+            },
+
+            // 导出带标签的原始CSV（用于恢复标注）
+            exportLabeledCSV() {
+                // 创建一个映射：每根K线对应的标签
+                // 根据用户选择的规则：窗口i的标签标记在第i+23根K线上
+                const klineLabels = new Array(this.rawData.length).fill('');
+
+                this.annotations.forEach((ann, windowIdx) => {
+                    if (ann.label) {
+                        const targetKlineIdx = windowIdx + 23;
+                        if (targetKlineIdx < this.rawData.length) {
+                            klineLabels[targetKlineIdx] = ann.label;
+                        }
+                    }
+                });
+
+                // 构建CSV（与原始格式相同，增加label列）
+                let csv = 'timestamp,open,high,low,close,volume,label\n';
+
+                this.rawData.forEach((candle, idx) => {
+                    csv += `${candle.timestamp},${candle.open},${candle.high},${candle.low},${candle.close},${candle.volume},${klineLabels[idx]}\n`;
+                });
+
+                // 下载文件
+                this.downloadFile(csv, `labeled_${this.fileName}`, 'text/csv');
+
+                // 显示保存成功提示
+                const labeledCount = klineLabels.filter(label => label !== '').length;
+                alert(`✅ 导出成功！\n\n` +
+                      `总K线数: ${this.rawData.length}\n` +
+                      `已标注K线: ${labeledCount}\n\n` +
+                      `文件已下载: labeled_${this.fileName}\n\n` +
+                      `💡 可以重新导入此文件继续标注！`);
+            },
+
+            // 导出已标注的图像（PyTorch ImageFolder格式，用于训练图像分类模型）
+            async exportImages() {
+                // 检查JSZip是否加载成功
+                if (typeof JSZip === 'undefined') {
+                    alert('❌ JSZip库未加载！请检查网络连接或刷新页面。');
+                    return;
+                }
+
+                // 筛选已标注的窗口
+                const labeledAnnotations = this.annotations.filter(ann => ann.label);
+                if (labeledAnnotations.length === 0) {
+                    alert('⚠️ 没有已标注的数据！\n请先标注一些窗口再导出图像。');
+                    return;
+                }
+
+                // 显示处理提示
+                const processingMsg = `正在生成 ${labeledAnnotations.length} 张图像...\n请稍候，不要关闭页面喵～`;
+                console.log(processingMsg);
+
+                try {
+                    // 创建ZIP文件
+                    const zip = new JSZip();
+
+                    // 创建数据集根文件夹
+                    const datasetFolder = zip.folder('kline_dataset');
+                    const imagesFolder = datasetFolder.folder('images');
+
+                    // 创建三个类别文件夹（PyTorch ImageFolder格式）
+                    const folders = {
+                        up: imagesFolder.folder('up'),
+                        down: imagesFolder.folder('down'),
+                        fluctuation: imagesFolder.folder('fluctuation')
+                    };
+
+                    // 创建临时Canvas用于绘制导出图像
+                    const exportCanvas = document.createElement('canvas');
+                    exportCanvas.width = 600;
+                    exportCanvas.height = 400;
+
+                    // 准备labels.csv的内容（备份用）
+                    let labelsCSV = 'filename,label\n';
+
+                    // 遍历所有已标注窗口
+                    for (let i = 0; i < labeledAnnotations.length; i++) {
+                        const ann = labeledAnnotations[i];
+                        const window = this.windows[ann.index];
+
+                        // 生成文件名：窗口索引_时间戳.png
+                        const timestamp = window.raw[0].timestamp.replace(/[\/:\s]/g, '-');
+                        const filename = `${ann.index}_${timestamp}.png`;
+
+                        // 绘制K线图到临时Canvas
+                        this.drawKlineChart(exportCanvas, window.normalized, ann.label);
+
+                        // 转换为Blob
+                        const blob = await new Promise(resolve => {
+                            exportCanvas.toBlob(resolve, 'image/png');
+                        });
+
+                        // 添加到对应标签文件夹
+                        folders[ann.label].file(filename, blob);
+
+                        // 记录到labels.csv（使用相对路径）
+                        labelsCSV += `images/${ann.label}/${filename},${ann.label}\n`;
+
+                        // 输出进度
+                        if ((i + 1) % 10 === 0 || (i + 1) === labeledAnnotations.length) {
+                            console.log(`已处理 ${i + 1}/${labeledAnnotations.length} 张图像...`);
+                        }
+                    }
+
+                    // 将labels.csv添加到数据集根目录
+                    datasetFolder.file('labels.csv', labelsCSV);
+
+                    // 生成README.md说明文件
+                    const readmeContent = `# K线图像分类数据集
+
+## 数据集结构
+\`\`\`
+kline_dataset/
+├── images/               # 图像文件夹（PyTorch ImageFolder格式）
+│   ├── up/              # 上涨类别
+│   ├── down/            # 下跌类别
+│   └── fluctuation/     # 波动类别
+└── labels.csv           # 标签文件（备份用）
+\`\`\`
+
+## 数据集统计
+- 总图像数: ${labeledAnnotations.length}
+- 上涨(up): ${this.annotations.filter(a => a.label === 'up').length}
+- 下跌(down): ${this.annotations.filter(a => a.label === 'down').length}
+- 波动(fluctuation): ${this.annotations.filter(a => a.label === 'fluctuation').length}
+
+## 图像信息
+- 尺寸: 600x400 像素
+- 格式: PNG
+- 内容: 24根K线归一化图像
+- 命名: {窗口索引}_{时间戳}.png
+
+## 使用方法
+
+### PyTorch
+\`\`\`python
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader
+
+# 定义数据转换
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),  # 调整为模型输入尺寸
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                       std=[0.229, 0.224, 0.225])
+])
+
+# 加载数据集（使用ImageFolder）
+dataset = datasets.ImageFolder(root='kline_dataset/images',
+                              transform=transform)
+
+# 创建数据加载器
+dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+
+# 类别映射
+print(dataset.classes)  # ['down', 'fluctuation', 'up']
+print(dataset.class_to_idx)  # {'down': 0, 'fluctuation': 1, 'up': 2}
+\`\`\`
+
+### TensorFlow/Keras
+\`\`\`python
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+
+# 创建数据生成器
+datagen = ImageDataGenerator(
+    rescale=1./255,
+    validation_split=0.2  # 80%训练，20%验证
+)
+
+# 训练集
+train_generator = datagen.flow_from_directory(
+    'kline_dataset/images',
+    target_size=(224, 224),
+    batch_size=32,
+    class_mode='categorical',
+    subset='training'
+)
+
+# 验证集
+val_generator = datagen.flow_from_directory(
+    'kline_dataset/images',
+    target_size=(224, 224),
+    batch_size=32,
+    class_mode='categorical',
+    subset='validation'
+)
+\`\`\`
+
+## 生成时间
+${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}
+
+## 标注来源
+BNBUSDT K线数据标注工具
+`;
+
+                    datasetFolder.file('README.md', readmeContent);
+
+                    // 生成ZIP文件
+                    console.log('正在打包ZIP文件...');
+                    const content = await zip.generateAsync({ type: 'blob' });
+
+                    // 下载ZIP
+                    const zipFilename = `kline_dataset_${Date.now()}.zip`;
+                    this.downloadFile(content, zipFilename, 'application/zip');
+
+                    // 显示成功提示
+                    const stats = this.getStatistics();
+                    alert(`✅ 导出成功！\n\n` +
+                          `📊 数据集统计：\n` +
+                          `  总图像数: ${labeledAnnotations.length}\n` +
+                          `  📈 上涨: ${stats.up}\n` +
+                          `  📉 下跌: ${stats.down}\n` +
+                          `  📊 波动: ${stats.fluctuation}\n\n` +
+                          `📁 数据集结构（PyTorch ImageFolder格式）：\n` +
+                          `  kline_dataset/\n` +
+                          `  ├── images/up/\n` +
+                          `  ├── images/down/\n` +
+                          `  ├── images/fluctuation/\n` +
+                          `  ├── labels.csv\n` +
+                          `  └── README.md\n\n` +
+                          `文件已下载: ${zipFilename}\n\n` +
+                          `💡 解压后可直接用于PyTorch/TensorFlow训练！`);
+
+                } catch (error) {
+                    console.error('导出图像失败:', error);
+                    alert(`❌ 导出失败！\n\n错误信息: ${error.message}`);
+                }
             },
 
             // ========================================
